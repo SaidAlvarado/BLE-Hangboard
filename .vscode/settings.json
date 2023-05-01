@@ -1,0 +1,9 @@
+{
+    "C_Cpp.default.compilerPath": "arm-none-eabi-gcc",
+    "C_Cpp.default.defines": [
+        "CPU_MODEL_NRF52840XXAA",
+        "BOARDS_COMMON_NRF52XXXDK",
+        "HAS_PERIPH_PWM",
+        "HAS_PERIPH_USBDEV"
+    ]
+}
