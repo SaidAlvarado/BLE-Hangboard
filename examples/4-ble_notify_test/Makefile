@@ -1,5 +1,5 @@
 # Set the name of your application:
-APPLICATION = 3-ble_temp_test
+APPLICATION = 4-ble_notify_test
 
 # Which board to compile to
 BOARD ?= nrf52840dk
