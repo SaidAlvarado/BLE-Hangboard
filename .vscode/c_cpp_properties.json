@@ -4,29 +4,22 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "RIOT/**",
-                "RIOT/pkg/nimble/autoadv/include/",
-                "RIOT/pkg/nimble/contrib/include/",
-                "RIOT/pkg/nimble/npl/include/",
-                "RIOT/core/lib/include/",
-                "RIOT/core/include/",
-                "RIOT/drivers/include/",
-                "RIOT/sys/include/",
-                "RIOT/build/pkg/nimble/nimble/transport/include/",
-                "RIOT/build/pkg/nimble/babblesim/hw/mcu/nordic/nrf52_bsim/include/",
-                "RIOT/build/pkg/nimble/nimble/host/include/",
-                "RIOT/build/pkg/nimble/nimble/include/",
-                "RIOT/build/pkg/nimble/nimble/host/util/include/",
-                "RIOT/build/pkg/nimble/nimble/host/services/gap/include",
-                "RIOT/build/pkg/nimble/nimble/host/services/gatt/include",
-                "RIOT/build/pkg/nimble/porting/nimble/include"
+                "${workspaceFolder}/RIOT/build/pkg/nimble/nimble/host/util/include",
+                "${workspaceFolder}/RIOT/build/pkg/nimble/nimble/host/include",
+                "${workspaceFolder}/RIOT/build/pkg/nrfx/mdk",
+                "${workspaceFolder}/RIOT/build/pkg/nimble/porting/nimble/include",
+                "${workspaceFolder}/RIOT/build/pkg/nimble/nimble/include",
+                "${workspaceFolder}/RIOT/build/pkg/nimble/nimble/host/services/gap/include",
+                "${workspaceFolder}/RIOT/build/pkg/nimble/nimble/host/services/gatt/include",
+                "${workspaceFolder}/RIOT/build/pkg/nimble/nimble/transport/include"
             ],
-            "defines": ["RIOT_BOARD=BOARD_NRF52DK", "NRF52840_XXAA"],
-            "compilerPath": "/usr/bin/clang",
+            "defines": [
+                "RIOT_BOARD=BOARD_NRF52DK",
+                "NRF52840_XXAA"
+            ],
             "cStandard": "c17",
             "cppStandard": "c++14",
-            "intelliSenseMode": "linux-clang-x64",
-            "configurationProvider": "ms-vscode.makefile-tools"
+            "intelliSenseMode": "linux-clang-x64"
         }
     ],
     "version": 4
