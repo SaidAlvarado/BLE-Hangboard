@@ -55,36 +55,37 @@
 #define BLE_GATT_SVC_ESS 0x181A         // Environmental Sensing Service
 #define BLE_GATT_CHAR_TEMP 0x2A6E       // Temperature Characteristic
 
-// Name that appears on the BLE scanner
-#define BLE_NAME "Nimble Example with RiotOS"
-
 #define GATT_DEVICE_INFO_UUID                   0x180A
 #define GATT_MANUFACTURER_NAME_UUID             0x2A29
 #define GATT_MODEL_NUMBER_UUID                  0x2A24
 
-#define STR_ANSWER_BUFFER_SIZE 100
-
-#define HRS_FLAGS_DEFAULT   (0x01) /* 16-bit BPM value */
-#define SENSOR_LOCATION     (0x02)   /* wrist sensor */
-#define UPDATE_INTERVAL     (250U)
-#define BPM_MIN             (80U)
-#define BPM_MAX             (210U)
-#define BPM_STEP            (2)
+#define UPDATE_INTERVAL     (250U)   // miliseconds between temperature updates
 #define BAT_LEVEL           (42U)
 
 /* ----------------------  Variables --------------------- */
 
 // Names of the Device Info service Characteristics
-static const char *_manufacturer_name = "Corporation Inc.";
-static const char *_model_number = "A4";
-static const char *_serial_number = "15263748-9876-x4";
-static const char *_fw_ver = "0.0.1";
-static const char *_hw_ver = "1.6";
+static const char *_manufacturer_name = "Personal Project";
+static const char *_model_number = "1";
+static const char *_serial_number = "1";
+static const char *_fw_ver = "0.1";
+static const char *_hw_ver = "0.1";
+
+// Global variable for the temperature notify
+static uint16_t _temp_val_handle;  // THis is not the temperature value, is just a kind of like an UUID for identifying the actual value.
+                                    // It HAS to be a uint16_t, irrespective of what the actual data is.
+static uint16_t _conn_handle;     // Handle for the BLE connection
+
+// Periodic event callback  variables
+static event_queue_t _eq;
+static event_t _update_evt;
+static event_timeout_t _update_timeout_evt;
 
 /* ----------------------  Prototypes --------------------- */
 
-static int _devinfo_handler(uint16_t conn_handle, uint16_t attr_handle,
-                            struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int
+_devinfo_handler(uint16_t conn_handle, uint16_t attr_handle,
+                    struct ble_gatt_access_ctxt *ctxt, void *arg);
 
 static int _bas_handler(uint16_t conn_handle, uint16_t attr_handle,
                         struct ble_gatt_access_ctxt *ctxt, void *arg);
@@ -92,7 +93,12 @@ static int _bas_handler(uint16_t conn_handle, uint16_t attr_handle,
 static int _temp_handler(uint16_t conn_handle, uint16_t attr_handle,
                         struct ble_gatt_access_ctxt *ctxt, void *arg);
 
+static void _temp_update(event_t *e);
+
 int16_t read_temperature(void);
+
+void init_rng(void);
+uint8_t read_rng(void);
 
 /* ----------------------  GATT SERVICE DEFINITION --------------------- */
 
@@ -156,7 +162,8 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
          {
              .uuid = BLE_UUID16_DECLARE(BLE_GATT_CHAR_TEMP),
              .access_cb = _temp_handler,
-             .flags = BLE_GATT_CHR_F_READ,
+             .val_handle = &_temp_val_handle,
+             .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
          },
          {
              0, /* no more characteristics in this service */
@@ -256,14 +263,115 @@ int16_t read_temperature(void) {
     return temperature;
 }
 
+void init_rng(void) {
+
+    // Enable the RNG peripheral
+    NRF_RNG->TASKS_START = 1;
+
+    // Enable the bias correction
+    NRF_RNG->CONFIG |= RNG_CONFIG_DERCEN_Msk;
+
+    // Wait for the bias correction to take effect
+    while ((NRF_RNG->EVENTS_VALRDY == 0)) {;}
+
+    // Clear the value ready and error events
+    NRF_RNG->EVENTS_VALRDY = 0;
+}
+
+uint8_t read_rng(void){
+
+    // Wait for a new random number to be generated
+    while (NRF_RNG->EVENTS_VALRDY == 0);
+
+    // Read a byte from the RNG
+    uint8_t random_byte = NRF_RNG->VALUE;
+
+    // Clear the value ready event
+    NRF_RNG->EVENTS_VALRDY = 0;
+
+    // Return the random byte
+    return random_byte;
+}
+
+static void _temp_update(event_t *e) {
+    (void)e;
+    struct os_mbuf *om;
+
+
+    /* Calculate the new random Temperature value */
+    int16_t temperature = (int16_t)read_rng() * 10; // values from 0 to 25.5 degC
+
+    printf("[NOTIFY] Temperature Characteistic: measurement %i\n", (int)temperature);
+
+    /* send heart rate data notification to GATT client */
+    om = ble_hs_mbuf_from_flat(&temperature, sizeof(temperature));
+    assert(om != NULL);
+    int res = ble_gatts_notify_custom(_conn_handle, _temp_val_handle, om);
+    assert(res == 0);
+    (void)res;
+
+    /* schedule next update event */
+    event_timeout_set(&_update_timeout_evt, UPDATE_INTERVAL);
+}
+
+static void _start_updating(void) {
+    event_timeout_set(&_update_timeout_evt, UPDATE_INTERVAL);
+    puts("[NOTIFY_ENABLED] Temperature sensing service");
+}
+
+static void _stop_updating(void) {
+    event_timeout_clear(&_update_timeout_evt);
+    puts("[NOTIFY_DISABLED] Temperature sensing service");
+}
+
+static int gap_event_cb(struct ble_gap_event *event, void *arg) {
+    (void)arg;
+
+    switch (event->type) {
+    case BLE_GAP_EVENT_CONNECT:
+        if (event->connect.status) {
+            _stop_updating();
+            nimble_autoadv_start(NULL);
+            return 0;
+        }
+        _conn_handle = event->connect.conn_handle;
+        break;
+
+    case BLE_GAP_EVENT_DISCONNECT:
+        _stop_updating();
+        nimble_autoadv_start(NULL);
+        break;
+
+    case BLE_GAP_EVENT_SUBSCRIBE:
+        if (event->subscribe.attr_handle == _temp_val_handle) {
+            if (event->subscribe.cur_notify == 1) {
+                _start_updating();
+            } else {
+                _stop_updating();
+            }
+        }
+        break;
+    }
+
+    return 0;
+}
+
 /* ----------------------  Main  --------------------- */
 
 int main(void)
 {
     puts("NimBLE GATT Server Example");
 
+    // Initialize random number generator
+    init_rng();
+
     int rc = 0;
     (void)rc;
+
+    // Create the event Callbacks to periodically update the Temperature update.
+    event_queue_init(&_eq);
+    _update_evt.handler = _temp_update;
+    event_timeout_ztimer_init(&_update_timeout_evt, ZTIMER_MSEC, &_eq, &_update_evt);
 
     /* verify and add our custom services */
     rc = ble_gatts_count_cfg(gatt_svr_svcs);
@@ -272,12 +380,34 @@ int main(void)
     assert(rc == 0);
 
     /* set the device name */
-    ble_svc_gap_device_name_set(BLE_NAME);
+    ble_svc_gap_device_name_set(CONFIG_NIMBLE_AUTOADV_DEVICE_NAME);
     /* reload the GATT server to link our added services */
     ble_gatts_start();
 
+    // Configure the notification and ble connectiong advertissment
+    nimble_autoadv_cfg_t cfg = {
+        .adv_duration_ms = BLE_HS_FOREVER,
+        .adv_itvl_ms = BLE_GAP_ADV_ITVL_MS(100),
+        .flags = NIMBLE_AUTOADV_FLAG_CONNECTABLE | NIMBLE_AUTOADV_FLAG_LEGACY |
+                 NIMBLE_AUTOADV_FLAG_SCANNABLE,
+        .channel_map = 0,
+        .filter_policy = 0,
+        .own_addr_type = nimble_riot_own_addr_type,
+        .phy = NIMBLE_PHY_1M,
+        .tx_power = 0,
+    };
+    /* set advertise params */
+    nimble_autoadv_cfg_update(&cfg);
+    /* configure and set the advertising data */
+    uint16_t temp_uuid = BLE_GATT_SVC_ESS;
+    nimble_autoadv_add_field(BLE_GAP_AD_UUID16_INCOMP, &temp_uuid, sizeof(temp_uuid));
+    nimble_autoadv_set_gap_cb(&gap_event_cb, NULL);
+
     /* start to advertise this node */
     nimble_autoadv_start(NULL);
+
+    /* run an event loop for handling the temperature rate update events */
+    event_loop(&_eq);
 
     return 0;
 }

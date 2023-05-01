@@ -65,7 +65,7 @@
 /* ----------------------  Variables --------------------- */
 
 // Names of the Device Info service Characteristics
-static const char *_manufacturer_name = "Alvarado Inc.";
+static const char *_manufacturer_name = "Corporation Inc.";
 static const char *_model_number = "A4";
 static const char *_serial_number = "15263748-9876-x4";
 static const char *_fw_ver = "0.0.1";
